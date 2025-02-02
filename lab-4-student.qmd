@@ -1,9 +1,12 @@
 ---
 title: "Lab 4: Childcare Costs in California"
-author: "Your name here!"
+author: "Nathan Huang"
 format: html
 editor: source
 embed-resources: true
+code-tools: true
+echo: true
+code-fold: true
 ---
 
 ## The Data
@@ -17,6 +20,8 @@ The data come to us from [TidyTuesday](https://github.com/rfordatascience/tidytu
 
 ```{r}
 #| label: setup
+library(tidyverse)
+library(forcats)
 
 ```
 
@@ -29,6 +34,7 @@ counties <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytues
 ```
 
 **1. Briefly describe the dataset (~ 4 sentences). What information does it contain?**
+The dataset contains data on income, employment, childcare costs and other data for each county. There are 2 files childcare_costs and counties linked by a country_fips_code. This allows us to analyze childcare cost across different places. 
 
 ## California Childcare Costs
 
@@ -39,6 +45,12 @@ Let's start by focusing only on California.
 
 ```{r}
 #| label: ca-childcare-costs
+ca_childcare <-
+  childcare_costs|>
+  inner_join(counties,
+             by = join_by(county_fips_code == county_fips_code)) |>
+  filter(state_name == "California" & state_abbreviation == "CA")
+
 
 ```
 
@@ -50,7 +62,26 @@ Let's start by focusing only on California.
 
 ca_childcare <- ca_childcare |> 
   mutate(county_name = str_remove(county_name, " County")) |>
-  ...
+  mutate(census_region = fct_collapse(
+    county_name,
+    "Superior California" = c("Butte", "Colusa", "El Dorado", "Glenn", "Lassen", "Modoc", "Nevada", 
+                   "Placer", "Plumas", "Sacramento", "Shasta", "Sierra", "Siskiyou", 
+                   "Sutter", "Tehama", "Yolo", "Yuba"),
+    "North Coast" = c("Del Norte", "Humboldt", "Lake", "Mendocino", "Napa", "Sonoma", "Trinity"),
+    "San Francisco Bay Area" = c("Alameda", "Contra Costa", "Marin", "San Francisco", "San Mateo", 
+                   "Santa Clara", "Solano"),
+    "Northern San Joaquin Valley" = c("Alpine", "Amador", "Calaveras", "Madera", "Mariposa", "Merced", 
+                   "Mono", "San Joaquin", "Stanislaus", "Tuolumne"),
+    "Central Coast" = c("Monterey", "San Benito", "San Luis Obispo", "Santa Barbara", 
+                   "Santa Cruz", "Ventura"),
+    "Southern San Joaquin Valley" = c("Fresno", "Inyo", "Kern", "Kings", "Tulare"),
+    "Inland Empire" = c("Riverside", "San Bernardino"),
+    "Los Angeles County" = c("Los Angeles"),
+    "Orange County" = c("Orange"),
+    "San Diego-Imperial" = c("Imperial", "San Diego")
+  ))
+ca_childcare
+names(ca_childcare)
 ```
 
 
@@ -58,6 +89,14 @@ ca_childcare <- ca_childcare |>
 
 ```{r}
 #| label: median-income-by-region-over-time
+median_by_region <- ca_childcare |>
+  filter(study_year == 2008 | study_year == 2018) |>
+  group_by(census_region, study_year) |>
+  summarise(median_income = median(mhi_2018)) |>
+  pivot_wider(names_from = study_year,
+              values_from = median_income) |>
+  arrange(`2018`)
+median_by_region
 
 ```
 
@@ -67,16 +106,47 @@ ca_childcare <- ca_childcare |>
 
 ```{r}
 #| label: lowest-median-weekly-price-2018
+weekly_median <- ca_childcare |>
+  filter(study_year == 2018) |>
+  group_by(census_region) |>
+  summarise(median_income = median(mc_infant)) |>
+  filter(median_income == min(median_income))
+weekly_median
+
 
 ```
 
 **6. The following plot shows, for all ten regions, the change over time of the full-time median price for center-based childcare for infants, toddlers, and preschoolers. Recreate the plot. You do not have to replicate the exact colors or theme, but your plot should have the same content, including the order of the facets and legend, reader-friendly labels, axes breaks, and a loess smoother.**
 
 ![Plot to recreate](https://atheobold.github.io/groupworthy-data-science/labs/instructions/images/lab-4-recreate-plot.png)
+```{r}
+ca_childcare_transformed <- ca_childcare |>
+  pivot_longer(cols = c(mc_infant, mc_toddler, mc_preschool),
+               names_to = "childcare_type",
+              values_to= "median_price") |>
+  mutate(childcare_type = fct_relevel(childcare_type, "mc_infant", "mc_toddler", "mc_preschool"),
+         childcare_type = fct_recode(childcare_type,
+                                     "Infant" = "mc_infant",
+                                     "Toddler" = "mc_toddler",
+                                     "Preschool" = "mc_preschool"),
+         study_year = as.numeric(study_year),
+         median_price = as.numeric(median_price),
+         childcare_type = as.factor(childcare_type))
+
+
+```
 
 ```{r}
 #| label: recreate-plot
-
+ggplot(data = ca_childcare_transformed, mapping = aes(x = study_year, y = median_price, color = census_region)) +
+  geom_smooth(method = "loess") +
+  geom_point(alpha = .5) +
+  facet_wrap(~ childcare_type) +
+  labs(title = "Weekly Median Price for Center-Based Childcare ($)",
+       x = "Study Year",
+       y = "Median Price ($)",
+       color = "Census Region") +
+  scale_x_continuous(breaks = seq(2008, 2018, by = 4))
 ```
 
 
@@ -86,6 +156,12 @@ ca_childcare <- ca_childcare |>
 
 ```{r}
 #| label: scatterplot-median-income-vs-childcare-cost
+ggplot(data = ca_childcare, mapping = aes(x = mhi_2018, y = mc_infant)) +
+  geom_point() +
+  geom_smooth(method="lm") +
+  labs(title = "Relationship between Median Household income and Childcare Cost for Infants", 
+    x = "Median Household Income",
+       y = "Childcare Costs for Infants")
 
 ```
 
@@ -93,10 +169,12 @@ ca_childcare <- ca_childcare |>
 
 ```{r}
 # complete the code provided
-reg_mod1 <- lm()
+reg_mod1 <- lm(mhi_2018 ~ mc_infant, data = ca_childcare)
 summary(reg_mod1)
 ```
 
 **9. Using the output from `summary()`, write out the estimated regression line (recall: $y = mx + b$).**
+y = 283.37x -14669.86
 
 **10. Do you have evidence to conclude there is a relationship between the median household income and the median weekly cost of center-based childcare for infants in California? Cite values from your `summary()` output to support your claim!**
+Yes there is evidence to conclude there is a relationship between the median household income and the median weekly cost of center-based childcare for infants in California. The p-value is basically 0 means we can reject the null hypothesis that there is no relationship. R-square of .63 shows a strong positive relationship.
